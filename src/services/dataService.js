@@ -51,6 +51,27 @@ const setStored = (key, data) => {
   }
 };
 
+// State flag for Firestore availability
+let firestoreAvailable = null; // null = untried, true = working, false = disabled/unreachable
+
+const safeFirestore = async (fn, timeoutMs = 1200) => {
+  if (!isFirebaseConfigured || !db || firestoreAvailable === false) return null;
+  try {
+    const res = await Promise.race([
+      fn(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('FIRESTORE_TIMEOUT')), timeoutMs))
+    ]);
+    firestoreAvailable = true;
+    return res;
+  } catch (err) {
+    if (firestoreAvailable === null) {
+      console.warn("ℹ️ [Database] Cloud Firestore not provisioned or unreachable. Using fast persistent local store.");
+      firestoreAvailable = false;
+    }
+    return null;
+  }
+};
+
 // Pre-initialize local data
 export const initLocalData = () => {
   const storedComplaints = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, []);
@@ -74,23 +95,13 @@ export const dataService = {
   // Complaints API
   // -------------------------------------------------------------
   async getComplaints(filter = {}) {
-    if (isFirebaseConfigured && db) {
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
       try {
-        const complaintsRef = collection(db, 'complaints');
-        const snapshot = await getDocs(complaintsRef);
-        let list = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
-        
-        // If Firestore is empty on first run, seed it!
-        if (list.length === 0) {
-          console.log("🌱 Seeding Firestore with initial Gandhinagar complaints...");
-          for (const item of INITIAL_COMPLAINTS) {
-            await setDoc(doc(db, 'complaints', item.id), item);
-          }
-          list = INITIAL_COMPLAINTS;
+        const snapshot = await safeFirestore(() => getDocs(collection(db, 'complaints')), 1200);
+        if (snapshot && snapshot.docs && snapshot.docs.length > 0) {
+          let list = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+          return this.filterComplaints(list, filter);
         }
-
-        // Apply filters
-        return this.filterComplaints(list, filter);
       } catch (err) {
         console.warn("Firestore fetch error, falling back to local storage:", err);
       }
@@ -113,19 +124,22 @@ export const dataService = {
   },
 
   async getComplaintById(id) {
-    if (isFirebaseConfigured && db) {
+    const list = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
+    const found = list.find(c => c.id === id);
+    if (found) return found;
+
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
       try {
         const docRef = doc(db, 'complaints', id);
-        const snapshot = await getDoc(docRef);
-        if (snapshot.exists()) {
+        const snapshot = await safeFirestore(() => getDoc(docRef), 1200);
+        if (snapshot && snapshot.exists && snapshot.exists()) {
           return { ...snapshot.data(), id: snapshot.id };
         }
       } catch (err) {
         console.warn("Firestore get error:", err);
       }
     }
-    const list = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
-    return list.find(c => c.id === id) || null;
+    return null;
   },
 
   async createComplaint(newComplaint) {
@@ -152,26 +166,22 @@ export const dataService = {
       ]
     };
 
-    // Save to Firestore if available
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, 'complaints', complaintId), entry);
-      } catch (err) {
-        console.warn("Firestore create error:", err);
-      }
-    }
-
-    // Always keep local updated
+    // 1. Immediately persist locally (instant UI response)
     const updated = [entry, ...list];
     setStored(LOCAL_STORAGE_KEYS.COMPLAINTS, updated);
 
-    // Create notification for Municipal Admin
-    await this.createNotification({
+    // 2. Non-blocking background sync to Firestore
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
+      safeFirestore(() => setDoc(doc(db, 'complaints', complaintId), entry), 1500).catch(() => {});
+    }
+
+    // 3. Create notification for Municipal Admin
+    this.createNotification({
       userId: 'USR-ADM-01',
       complaintId: entry.id,
       title: 'New Civic Issue Lodged',
       message: `New complaint ${entry.id} reported in ${entry.landmark || 'Gandhinagar'}. Verification required.`
-    });
+    }).catch(() => {});
 
     return entry;
   },
@@ -205,22 +215,19 @@ export const dataService = {
     list[index] = updatedItem;
     setStored(LOCAL_STORAGE_KEYS.COMPLAINTS, list);
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await updateDoc(doc(db, 'complaints', complaintId), updatedItem);
-      } catch (err) {
-        console.warn("Firestore update error:", err);
-      }
+    // Non-blocking background sync to Firestore
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
+      safeFirestore(() => updateDoc(doc(db, 'complaints', complaintId), updatedItem), 1500).catch(() => {});
     }
 
     // Trigger notification to Citizen
     if (current.citizenId) {
-      await this.createNotification({
+      this.createNotification({
         userId: current.citizenId,
         complaintId: current.id,
         title: `Status: ${newStatus}`,
         message: `Your complaint ${current.id} has been marked as "${newStatus}". Remarks: ${remarks || 'Updated by municipal team'}.`
-      });
+      }).catch(() => {});
     }
 
     return updatedItem;
@@ -568,12 +575,13 @@ export const dataService = {
   // User Management & Database Persistence
   // -------------------------------------------------------------
   async getUsers() {
-    if (isFirebaseConfigured && db) {
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
       try {
-        const usersRef = collection(db, 'users');
-        const snapshot = await getDocs(usersRef);
-        const list = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
-        if (list.length > 0) return list;
+        const snapshot = await safeFirestore(() => getDocs(collection(db, 'users')), 1200);
+        if (snapshot && snapshot.docs && snapshot.docs.length > 0) {
+          const list = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+          return list;
+        }
       } catch (err) {
         console.warn("Firestore fetch users fallback:", err);
       }
@@ -582,8 +590,8 @@ export const dataService = {
   },
 
   async saveUser(user) {
-    const list = await this.getUsers();
-    const index = list.findIndex(u => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
+    const list = getStored(LOCAL_STORAGE_KEYS.USERS, DEMO_USERS);
+    const index = list.findIndex(u => u.id === user.id || (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()));
     
     let updated;
     if (index >= 0) {
@@ -593,20 +601,16 @@ export const dataService = {
       updated = [...list, user];
     }
 
+    // 1. Instantly save to local persistent storage (0ms UI latency)
     setStored(LOCAL_STORAGE_KEYS.USERS, updated);
 
-    // Persist to Cloud Firestore if configured
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, 'users', user.id), user, { merge: true });
-        console.log(`🔥 [Firestore] User saved successfully in 'users' collection:`, user.id);
-      } catch (err) {
-        console.warn("Failed saving user to Firestore:", err);
-      }
+    // 2. Non-blocking background sync to Firestore
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
+      safeFirestore(() => setDoc(doc(db, 'users', user.id), user, { merge: true }), 1500).catch(() => {});
     }
 
-    // Record registration / profile audit log
-    await this.addAuditLog('USER_SAVED', user.id, `User account ${user.email} (${user.role}) recorded in database`);
+    // 3. Record registration / profile audit log
+    this.addAuditLog('USER_SAVED', user.id, `User account ${user.email} (${user.role}) recorded in database`).catch(() => {});
     return user;
   },
 
@@ -623,7 +627,7 @@ export const dataService = {
   },
 
   async updateUser(userId, updates) {
-    const users = await this.getUsers();
+    const users = getStored(LOCAL_STORAGE_KEYS.USERS, DEMO_USERS);
     const index = users.findIndex(u => u.id === userId);
     if (index === -1) return null;
 
@@ -631,15 +635,12 @@ export const dataService = {
     users[index] = updatedUser;
     setStored(LOCAL_STORAGE_KEYS.USERS, users);
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await updateDoc(doc(db, 'users', userId), updates);
-      } catch (err) {
-        console.warn("Firestore user update error:", err);
-      }
+    // Non-blocking background update
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
+      safeFirestore(() => updateDoc(doc(db, 'users', userId), updates), 1500).catch(() => {});
     }
 
-    await this.addAuditLog('USER_UPDATED', userId, `User profile updated`);
+    this.addAuditLog('USER_UPDATED', userId, `User profile updated`).catch(() => {});
     return updatedUser;
   },
 
@@ -658,12 +659,9 @@ export const dataService = {
     const updated = [entry, ...logs].slice(0, 500); // keep 500 latest
     setStored(LOCAL_STORAGE_KEYS.AUDIT_LOGS, updated);
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await setDoc(doc(db, 'auditLogs', entry.id), entry);
-      } catch (err) {
-        console.warn("Firestore audit log error:", err);
-      }
+    // Non-blocking background sync
+    if (isFirebaseConfigured && db && firestoreAvailable !== false) {
+      safeFirestore(() => setDoc(doc(db, 'auditLogs', entry.id), entry), 1500).catch(() => {});
     }
     return entry;
   },

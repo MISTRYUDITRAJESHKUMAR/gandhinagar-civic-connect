@@ -30,12 +30,17 @@ export const AuthModal = ({ isOpen, onClose }) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMessage('');
-    const res = await login(email, password);
-    setIsSubmitting(false);
-    if (res.success) {
-      onClose();
-    } else {
-      setErrorMessage(res.error || 'Login failed. Please check credentials.');
+    try {
+      const res = await login(email, password);
+      if (res && res.success) {
+        onClose();
+      } else {
+        setErrorMessage(res?.error || 'Login failed. Please check credentials.');
+      }
+    } catch (err) {
+      setErrorMessage(err?.message || 'Login failed. Please check credentials.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -43,12 +48,17 @@ export const AuthModal = ({ isOpen, onClose }) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMessage('');
-    const res = await register({ name, mobile, email, password, wardId });
-    setIsSubmitting(false);
-    if (res.success) {
-      onClose();
-    } else {
-      setErrorMessage(res.error || 'Registration failed.');
+    try {
+      const res = await register({ name, mobile, email, password, wardId });
+      if (res && res.success) {
+        onClose();
+      } else {
+        setErrorMessage(res?.error || 'Registration failed.');
+      }
+    } catch (err) {
+      setErrorMessage(err?.message || 'Registration failed.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

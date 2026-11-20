@@ -12,6 +12,37 @@ import { dataService } from '../services/dataService';
 
 const AuthContext = createContext(null);
 
+const getFriendlyAuthError = (err) => {
+  if (!err) return 'An unexpected error occurred. Please try again.';
+  const code = err.code || err.message || '';
+  if (code.includes('auth/email-already-in-use')) {
+    return 'This email address is already registered. Please Sign In.';
+  }
+  if (code.includes('auth/invalid-credential') || code.includes('auth/wrong-password')) {
+    return 'Incorrect email or password. Please verify and try again.';
+  }
+  if (code.includes('auth/user-not-found')) {
+    return 'No account found with this email. Please register a new account.';
+  }
+  if (code.includes('auth/weak-password')) {
+    return 'Password is too weak. Please use at least 6 characters.';
+  }
+  if (code.includes('auth/invalid-email')) {
+    return 'Please enter a valid email address.';
+  }
+  if (code.includes('AUTH_TIMEOUT')) {
+    return 'Request timed out. Please check your internet connection and try again.';
+  }
+  return err.message || 'Authentication failed. Please try again.';
+};
+
+const withAuthTimeout = (promise, ms = 4000) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('AUTH_TIMEOUT')), ms))
+  ]);
+};
+
 export const AuthProvider = ({ children }) => {
   // Check if an active session exists; default to null if not authenticated
   const [currentUser, setCurrentUser] = useState(() => {
@@ -41,10 +72,9 @@ export const AuthProvider = ({ children }) => {
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         if (firebaseUser) {
           try {
-            const docRef = doc(db, 'users', firebaseUser.uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              const profile = { ...docSnap.data(), uid: firebaseUser.uid };
+            const users = await dataService.getUsers();
+            let profile = users.find(u => u.id === firebaseUser.uid || u.email?.toLowerCase() === firebaseUser.email?.toLowerCase());
+            if (profile) {
               setCurrentUser(profile);
             } else {
               // Create default profile for newly authenticated user
@@ -74,7 +104,7 @@ export const AuthProvider = ({ children }) => {
     const found = users.find(u => u.role === targetRole) || DEMO_USERS.find(u => u.role === targetRole);
     if (found) {
       setCurrentUser(found);
-      await dataService.addAuditLog('ROLE_SWITCH', found.id, `Switched persona to ${targetRole}`);
+      dataService.addAuditLog('ROLE_SWITCH', found.id, `Switched persona to ${targetRole}`).catch(() => {});
     }
   };
 
@@ -86,13 +116,18 @@ export const AuthProvider = ({ children }) => {
     // 1. If live Firebase is configured, authenticate via Firebase Auth
     if (isFirebaseConfigured && auth) {
       try {
-        const userCred = await signInWithEmailAndPassword(auth, email, password);
-        const docRef = doc(db, 'users', userCred.user.uid);
-        const docSnap = await getDoc(docRef);
-        let profile;
-        if (docSnap.exists()) {
-          profile = { ...docSnap.data(), uid: userCred.user.uid };
-        } else {
+        const userCred = await withAuthTimeout(
+          signInWithEmailAndPassword(auth, email.trim(), password),
+          4500
+        );
+
+        const users = await dataService.getUsers();
+        let profile = users.find(u => 
+          u.id === userCred.user.uid || 
+          u.email?.toLowerCase() === email.trim().toLowerCase()
+        );
+
+        if (!profile) {
           profile = {
             id: userCred.user.uid,
             email: userCred.user.email,
@@ -101,17 +136,31 @@ export const AuthProvider = ({ children }) => {
             wardId: 'W-04',
             createdAt: new Date().toISOString()
           };
-          await dataService.saveUser(profile);
         }
         
+        profile.lastLoginAt = new Date().toISOString();
+        await dataService.saveUser(profile);
         setCurrentUser(profile);
-        await dataService.addAuditLog('USER_LOGIN', profile.id, `Citizen logged in via Firebase Auth: ${email}`);
+        dataService.addAuditLog('USER_LOGIN', profile.id, `User logged in: ${email}`).catch(() => {});
         setLoading(false);
         return { success: true, user: profile };
       } catch (err) {
+        // Fallback: Check if local/demo user exists
+        const users = await dataService.getUsers();
+        const existing = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+        if (existing && (!existing.password || existing.password === password)) {
+          const updated = { ...existing, lastLoginAt: new Date().toISOString() };
+          await dataService.saveUser(updated);
+          setCurrentUser(updated);
+          dataService.addAuditLog('USER_LOGIN', updated.id, `User logged in via local credentials: ${email}`).catch(() => {});
+          setLoading(false);
+          return { success: true, user: updated };
+        }
+
         setLoading(false);
-        setAuthError(err.message);
-        return { success: false, error: err.message };
+        const friendlyMsg = getFriendlyAuthError(err);
+        setAuthError(friendlyMsg);
+        return { success: false, error: friendlyMsg };
       }
     }
 
@@ -120,7 +169,6 @@ export const AuthProvider = ({ children }) => {
     const existing = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
     
     if (existing) {
-      // If user has a set password, verify it (demo passwords accept any or matched)
       if (existing.password && existing.password !== password) {
         setLoading(false);
         setAuthError('Incorrect password. Please try again.');
@@ -130,7 +178,7 @@ export const AuthProvider = ({ children }) => {
       const updated = { ...existing, lastLoginAt: new Date().toISOString() };
       await dataService.saveUser(updated);
       setCurrentUser(updated);
-      await dataService.addAuditLog('USER_LOGIN', updated.id, `User logged in via database credentials: ${email}`);
+      dataService.addAuditLog('USER_LOGIN', updated.id, `User logged in via database credentials: ${email}`).catch(() => {});
       setLoading(false);
       return { success: true, user: updated };
     }
@@ -150,7 +198,7 @@ export const AuthProvider = ({ children }) => {
 
     await dataService.saveUser(newCitizen);
     setCurrentUser(newCitizen);
-    await dataService.addAuditLog('USER_REGISTERED_AUTO', newCitizen.id, `Auto-registered citizen account: ${email}`);
+    dataService.addAuditLog('USER_REGISTERED_AUTO', newCitizen.id, `Auto-registered citizen account: ${email}`).catch(() => {});
     setLoading(false);
     return { success: true, user: newCitizen };
   };
@@ -160,19 +208,23 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setAuthError(null);
 
-    // Check if user already exists
+    // Fast check if user already exists
     const users = await dataService.getUsers();
     const duplicateEmail = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
     if (duplicateEmail) {
       setLoading(false);
       setAuthError('An account with this email address already exists. Please Sign In.');
-      return { success: false, error: 'Account already exists. Please Sign In.' };
+      return { success: false, error: 'An account with this email address already exists. Please Sign In.' };
     }
 
     // 1. If live Firebase is configured
     if (isFirebaseConfigured && auth) {
       try {
-        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        const userCred = await withAuthTimeout(
+          createUserWithEmailAndPassword(auth, email.trim(), password),
+          4500
+        );
+
         const userProfile = {
           id: userCred.user.uid,
           name: name.trim(),
@@ -186,25 +238,49 @@ export const AuthProvider = ({ children }) => {
           lastLoginAt: new Date().toISOString()
         };
 
-        // Save into Firestore 'users' collection
+        // Save immediately into database (instant local persistent storage + background cloud sync)
         await dataService.saveUser(userProfile);
         setCurrentUser(userProfile);
+        dataService.addAuditLog('USER_REGISTERED', userProfile.id, `New ${role} registered: ${userProfile.name} (${userProfile.email})`).catch(() => {});
+        
         setLoading(false);
         return { success: true, user: userProfile };
       } catch (err) {
+        // If Firebase Auth timed out or failed with network, save locally as fallback
+        if (err.message === 'AUTH_TIMEOUT' || err.code === 'auth/network-request-failed') {
+          const fallbackUser = {
+            id: `USR-${role.slice(0, 3).toUpperCase()}-${Date.now()}`,
+            name: name.trim(),
+            mobile: mobile.trim(),
+            email: email.trim().toLowerCase(),
+            password,
+            wardId: wardId || 'W-04',
+            role: role || 'citizen',
+            departmentId: departmentId || (role === 'officer' || role === 'worker' ? 'DEP-SAN' : null),
+            designation: designation || (role === 'citizen' ? 'Resident Citizen' : role),
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString()
+          };
+          await dataService.saveUser(fallbackUser);
+          setCurrentUser(fallbackUser);
+          setLoading(false);
+          return { success: true, user: fallbackUser };
+        }
+
         setLoading(false);
-        setAuthError(err.message);
-        return { success: false, error: err.message };
+        const friendlyMsg = getFriendlyAuthError(err);
+        setAuthError(friendlyMsg);
+        return { success: false, error: friendlyMsg };
       }
     }
 
-    // 2. Save into Database (LocalStorage + Firestore seed sync)
+    // 2. Save into Database (LocalStorage + Seed sync)
     const newUser = {
       id: `USR-${role.slice(0, 3).toUpperCase()}-${Date.now()}`,
       name: name.trim(),
       mobile: mobile.trim(),
       email: email.trim().toLowerCase(),
-      password, // Stored securely in user record
+      password,
       wardId: wardId || 'W-04',
       role: role || 'citizen',
       departmentId: departmentId || (role === 'officer' || role === 'worker' ? 'DEP-SAN' : null),
@@ -213,10 +289,9 @@ export const AuthProvider = ({ children }) => {
       lastLoginAt: new Date().toISOString()
     };
 
-    // Save permanently in database
     await dataService.saveUser(newUser);
     setCurrentUser(newUser);
-    await dataService.addAuditLog('USER_REGISTERED', newUser.id, `New ${role} registered: ${newUser.name} (${newUser.email})`);
+    dataService.addAuditLog('USER_REGISTERED', newUser.id, `New ${role} registered: ${newUser.name} (${newUser.email})`).catch(() => {});
     
     setLoading(false);
     return { success: true, user: newUser };

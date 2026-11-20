@@ -52,16 +52,20 @@ export const AuthPage = ({ initialTab = 'login', onBack, onSuccess }) => {
     setIsSubmitting(true);
     setStatusMessage(null);
 
-    const res = await login(loginEmail, loginPassword);
-    setIsSubmitting(false);
-
-    if (res.success) {
-      setStatusMessage({ type: 'success', text: `Welcome back, ${res.user.name}! Opening your module...` });
-      setTimeout(() => {
-        if (onSuccess) onSuccess(res.user);
-      }, 500);
-    } else {
-      setStatusMessage({ type: 'error', text: res.error || 'Invalid credentials. Please verify your email and password.' });
+    try {
+      const res = await login(loginEmail, loginPassword);
+      if (res && res.success) {
+        setStatusMessage({ type: 'success', text: `Welcome back, ${res.user.name}! Opening your module...` });
+        setTimeout(() => {
+          if (onSuccess) onSuccess(res.user);
+        }, 500);
+      } else {
+        setStatusMessage({ type: 'error', text: res?.error || 'Invalid credentials. Please verify your email and password.' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err?.message || 'Login encountered an issue. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -94,16 +98,20 @@ export const AuthPage = ({ initialTab = 'login', onBack, onSuccess }) => {
       designation: regRole === 'citizen' ? 'Verified Gandhinagar Citizen' : `${regRole.toUpperCase()} Authority`
     };
 
-    const res = await register(regData);
-    setIsSubmitting(false);
-
-    if (res.success) {
-      setStatusMessage({ type: 'success', text: `Account registered & saved into database! Welcome, ${res.user.name}.` });
-      setTimeout(() => {
-        if (onSuccess) onSuccess(res.user);
-      }, 600);
-    } else {
-      setStatusMessage({ type: 'error', text: res.error || 'Registration failed. Please check form details.' });
+    try {
+      const res = await register(regData);
+      if (res && res.success) {
+        setStatusMessage({ type: 'success', text: `Account registered & saved into database! Welcome, ${res.user.name}.` });
+        setTimeout(() => {
+          if (onSuccess) onSuccess(res.user);
+        }, 600);
+      } else {
+        setStatusMessage({ type: 'error', text: res?.error || 'Registration failed. Please check form details.' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err?.message || 'Registration encountered an issue. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
