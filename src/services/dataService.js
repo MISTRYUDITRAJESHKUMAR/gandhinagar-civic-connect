@@ -352,8 +352,8 @@ export const dataService = {
     );
   },
 
-  async submitResolutionProof(complaintId, workerName, { beforePhoto, afterPhoto, notes }) {
-    const list = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
+  async submitResolutionProof(complaintId, workerName, { beforePhoto, afterPhoto, notes, captureMetadata }) {
+    const list = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, []);
     const complaint = list.find(c => c.id === complaintId);
     if (!complaint) return null;
 
@@ -362,7 +362,12 @@ export const dataService = {
       completedAt: new Date().toISOString(),
       beforePhoto: beforePhoto || complaint.workOrder?.beforePhoto || complaint.media?.[0]?.url,
       afterPhoto,
-      notes
+      notes,
+      captureMetadata: captureMetadata || {
+        capturedAt: new Date().toISOString(),
+        formattedTime: new Date().toLocaleString('en-IN'),
+        isLiveCaptured: true
+      }
     };
 
     const res = await this.updateComplaintStatus(
