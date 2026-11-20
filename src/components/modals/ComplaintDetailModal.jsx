@@ -59,135 +59,171 @@ export const ComplaintDetailModal = ({ complaint, onClose, onUpdated }) => {
   // Action Handlers
   // -----------------------------------------------------------------
   const handleAdminVerify = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
-    const updated = await dataService.verifyComplaint(
-      complaint.id, 
-      currentUser?.name || 'Municipal Admin', 
-      assignWardId, 
-      'Admin verified location, photo, and genuine civic problem.'
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.verifyComplaint(
+        complaint.id, 
+        currentUser?.name || 'Municipal Admin', 
+        assignWardId, 
+        'Admin verified location, photo, and genuine civic problem.'
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleAdminReject = async () => {
+    if (isProcessing) return;
     if (!rejectionReason.trim()) {
       alert('Please specify a rejection reason');
       return;
     }
     setIsProcessing(true);
-    const updated = await dataService.rejectComplaint(
-      complaint.id, 
-      currentUser?.name || 'Municipal Admin', 
-      rejectionReason
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.rejectComplaint(
+        complaint.id, 
+        currentUser?.name || 'Municipal Admin', 
+        rejectionReason
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleAdminAssign = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
     const dept = INITIAL_DEPARTMENTS.find(d => d.id === assignDeptId);
-    const updated = await dataService.assignDepartment(
-      complaint.id, 
-      currentUser?.name || 'Municipal Admin',
-      {
-        departmentId: assignDeptId,
-        priority: assignPriority,
-        targetDate: assignTargetDate,
-        officerId: 'USR-OFF-01',
-        officerName: dept?.head || 'Department Officer'
-      }
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.assignDepartment(
+        complaint.id, 
+        currentUser?.name || 'Municipal Admin',
+        {
+          departmentId: assignDeptId,
+          priority: assignPriority,
+          targetDate: assignTargetDate,
+          officerId: 'USR-OFF-01',
+          officerName: dept?.head || 'Department Officer'
+        }
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleOfficerAssignWorker = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
-    const updated = await dataService.assignWorker(
-      complaint.id,
-      currentUser?.name || 'Department Officer',
-      {
-        workerId,
-        workerName,
-        instructions: workerInstructions,
-        targetDate: assignTargetDate
-      }
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.assignWorker(
+        complaint.id,
+        currentUser?.name || 'Department Officer',
+        {
+          workerId,
+          workerName,
+          instructions: workerInstructions,
+          targetDate: assignTargetDate
+        }
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleOfficerVerifyResolution = async (approved) => {
+    if (isProcessing) return;
     setIsProcessing(true);
-    const updated = await dataService.verifyResolution(
-      complaint.id,
-      currentUser?.name || 'Department Officer',
-      approved,
-      officerRemarks || (approved ? 'Verified and approved on-site completion' : 'Incomplete work, rework required')
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.verifyResolution(
+        complaint.id,
+        currentUser?.name || 'Department Officer',
+        approved,
+        officerRemarks || (approved ? 'Verified and approved on-site completion' : 'Incomplete work, rework required')
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleWorkerStart = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
-    const updated = await dataService.startWork(
-      complaint.id,
-      currentUser?.name || 'Field Worker'
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.startWork(
+        complaint.id,
+        currentUser?.name || 'Field Worker'
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleWorkerSubmitProof = async () => {
+    if (isProcessing) return;
     if (!afterPhotoUrl) {
       alert('Please attach completion proof photo');
       return;
     }
     setIsProcessing(true);
-    const updated = await dataService.submitResolutionProof(
-      complaint.id,
-      currentUser?.name || 'Field Worker',
-      {
-        beforePhoto: complaint.media?.[0]?.url,
-        afterPhoto: afterPhotoUrl,
-        notes: workerNotes
-      }
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.submitResolutionProof(
+        complaint.id,
+        currentUser?.name || 'Field Worker',
+        {
+          beforePhoto: complaint.media?.[0]?.url,
+          afterPhoto: afterPhotoUrl,
+          notes: workerNotes
+        }
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleCitizenFeedback = async (satisfied) => {
+    if (isProcessing) return;
     setIsProcessing(true);
-    const updated = await dataService.submitFeedback(
-      complaint.id,
-      currentUser?.name || 'Citizen',
-      {
-        rating,
-        feedbackText: feedbackNotes || (satisfied ? 'Work completed satisfactorily.' : 'Issue unresolved.'),
-        isSatisfied: satisfied
-      }
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.submitFeedback(
+        complaint.id,
+        currentUser?.name || 'Citizen',
+        {
+          rating,
+          feedbackText: feedbackNotes || (satisfied ? 'Work completed satisfactorily.' : 'Issue unresolved.'),
+          isSatisfied: satisfied
+        }
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleCitizenReopen = async () => {
+    if (isProcessing) return;
     if (!reopenReason.trim()) {
       alert('Please provide reason for reopening');
       return;
     }
     setIsProcessing(true);
-    const updated = await dataService.reopenComplaint(
-      complaint.id,
-      currentUser?.name || 'Citizen',
-      reopenReason
-    );
-    setIsProcessing(false);
-    onUpdated(updated);
+    try {
+      const updated = await dataService.reopenComplaint(
+        complaint.id,
+        currentUser?.name || 'Citizen',
+        reopenReason
+      );
+      if (updated) onUpdated(updated);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Stepper milestones
@@ -494,7 +530,7 @@ export const ComplaintDetailModal = ({ complaint, onClose, onUpdated }) => {
                   )}
 
                   {/* Department Assignment */}
-                  {['Verified', 'Submitted', 'Assigned'].includes(complaint.status) && (
+                  {['Verified', 'Submitted'].includes(complaint.status) && (
                     <div className="space-y-3 pt-3 border-t border-rose-200">
                       <span className="text-xs font-bold text-slate-800 block">
                         Step 6: Allocate Department, Priority & SLA Target
@@ -541,10 +577,28 @@ export const ComplaintDetailModal = ({ complaint, onClose, onUpdated }) => {
                       <button
                         onClick={handleAdminAssign}
                         disabled={isProcessing}
-                        className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition"
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-2"
                       >
-                        Confirm Assignment to Department
+                        {isProcessing ? 'Assigning...' : 'Confirm Assignment to Department'}
                       </button>
+                    </div>
+                  )}
+
+                  {/* Already Assigned State (Replaces form once confirmed) */}
+                  {['Assigned', 'In Progress', 'Resolution Submitted', 'Resolved', 'Closed'].includes(complaint.status) && (
+                    <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <div className="text-xs space-y-1">
+                        <p className="font-bold text-emerald-950">
+                          Assigned to {INITIAL_DEPARTMENTS.find(d => d.id === complaint.departmentId)?.name || complaint.departmentId || 'Department'}
+                        </p>
+                        <p className="text-emerald-800 text-[11px]">
+                          Priority: <span className="font-semibold">{complaint.priority || 'Medium'}</span> | Target SLA: <span className="font-semibold">{complaint.targetDate || 'Pending'}</span>
+                        </p>
+                        <p className="text-emerald-700 text-[11px]">
+                          Work order handed over to Department Officer.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -559,7 +613,7 @@ export const ComplaintDetailModal = ({ complaint, onClose, onUpdated }) => {
                   </div>
 
                   {/* Assign Worker */}
-                  {['Assigned', 'In Progress'].includes(complaint.status) && (
+                  {complaint.status === 'Assigned' && (
                     <div className="space-y-3">
                       <span className="text-xs font-bold text-slate-800 block">
                         Step 7: Assign Field Worker & Work Order
@@ -601,10 +655,25 @@ export const ComplaintDetailModal = ({ complaint, onClose, onUpdated }) => {
                       <button
                         onClick={handleOfficerAssignWorker}
                         disabled={isProcessing}
-                        className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 transition"
+                        className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 disabled:opacity-50 transition"
                       >
-                        Dispatch Work Order to Field Worker
+                        {isProcessing ? 'Dispatching Work Order...' : 'Dispatch Work Order to Field Worker'}
                       </button>
+                    </div>
+                  )}
+
+                  {/* Already Assigned Worker State */}
+                  {['In Progress', 'Resolution Submitted', 'Resolved', 'Closed'].includes(complaint.status) && (
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-start gap-2.5 text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-emerald-900">
+                          Work Order Dispatched to {complaint.assignedWorkerName || 'Field Worker'}
+                        </p>
+                        <p className="text-emerald-700 text-[11px] mt-0.5">
+                          Worker is actively resolving this issue on site.
+                        </p>
+                      </div>
                     </div>
                   )}
 
