@@ -74,16 +74,10 @@ const safeFirestore = async (fn, timeoutMs = 1200) => {
 
 // Pre-initialize local data
 export const initLocalData = () => {
-  const storedComplaints = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, []);
-  const hasLegacyDemo = storedComplaints.some(c => ['GCC-2026-000101', 'GCC-2026-000102', 'GCC-2026-000103', 'GCC-2026-000104', 'GCC-2026-000105'].includes(c.id));
-  if (hasLegacyDemo) {
-    setStored(LOCAL_STORAGE_KEYS.COMPLAINTS, []);
-    setStored(LOCAL_STORAGE_KEYS.NOTIFICATIONS, []);
-  } else {
-    getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
-  }
+  // Ensure persistent storage keys exist without wiping user data
+  getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, []);
   getStored(LOCAL_STORAGE_KEYS.USERS, DEMO_USERS);
-  getStored(LOCAL_STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+  getStored(LOCAL_STORAGE_KEYS.NOTIFICATIONS, []);
   getStored(LOCAL_STORAGE_KEYS.WARDS, INITIAL_WARDS);
   getStored(LOCAL_STORAGE_KEYS.DEPARTMENTS, INITIAL_DEPARTMENTS);
 };
@@ -143,11 +137,18 @@ export const dataService = {
   },
 
   async createComplaint(newComplaint) {
-    const list = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
+    const list = getStored(LOCAL_STORAGE_KEYS.COMPLAINTS, []);
     
-    // Generate clean civic complaint ID: GCC-2026-000XXX
-    const nextNum = list.length + 101;
-    const complaintId = `GCC-2026-${String(nextNum).padStart(6, '0')}`;
+    // Generate clean civic complaint ID: GCC-2026-XXXXXX
+    const maxNum = list.reduce((max, c) => {
+      const match = c.id && c.id.match(/GCC-2026-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        return num > max ? num : max;
+      }
+      return max;
+    }, 100);
+    const complaintId = `GCC-2026-${String(maxNum + 1).padStart(6, '0')}`;
     
     const timestamp = new Date().toISOString();
     const entry = {

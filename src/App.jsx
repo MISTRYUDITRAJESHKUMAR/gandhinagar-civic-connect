@@ -38,7 +38,7 @@ const AppContent = () => {
 
   useEffect(() => {
     loadComplaints();
-  }, []);
+  }, [currentUser]);
 
   // When auth state changes, align default view
   useEffect(() => {
